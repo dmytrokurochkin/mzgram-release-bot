@@ -43,7 +43,10 @@ wait_for() {
     return 1
 }
 
+# Conditions for wait_for are functions: "$(...)" in its arguments would be counted only once
 posts_are() { [ "$(count 8081 sendMediaGroup)" = "$1" ]; }
+pins_are() { [ "$(count 8081 pinChatMessage)" = "$1" ]; }
+admin_told_about() { [ "$(count 8081 sendMessage "$1")" -ge 1 ]; }
 
 release_files() {
     printf '{"MZGram-Android-%s.apk": "apk %s %s", "MZGram-Android-%s-rotation.lineage": "lineage"}' "$1" "$1" "$(head -c 3000 /dev/zero | tr '\0' x)" "$1"
@@ -105,7 +108,7 @@ ok "backfill: the old release is recorded, nothing posted"
 # --- a new release: one post with all files, pinned ---
 add_release "{\"repo\": \"$REPO\", \"tag\": \"v1.0.0\", \"name\": \"MZGram Android 1.0.0\", \"body\": \"- First release\", \"files\": $(release_files 1.0.0)}"
 wait_for 60 posts_are 1 || fail "v1.0.0 was not posted"
-wait_for 10 test "$(count 8081 pinChatMessage)" = 1 || fail "post not pinned"
+wait_for 10 pins_are 1 || fail "post not pinned"
 curl -s http://127.0.0.1:8081/_control/calls | python3 -c '
 import json, sys, hashlib
 call = [c for c in json.load(sys.stdin) if c["method"] == "sendMediaGroup"][0]
@@ -119,7 +122,7 @@ ok "v1.0.0: one post with the apk, the lineage and SHA256SUMS, pinned"
 
 # --- releases that must not be posted ---
 add_release "{\"repo\": \"$REPO\", \"tag\": \"v1.0.1\", \"files\": $(release_files 1.0.1), \"bad_sums\": [\"MZGram-Android-1.0.1.apk\"]}"
-wait_for 60 test "$(count 8081 sendMessage v1.0.1)" -ge 1 || fail "the admin was not told about the bad checksum"
+wait_for 60 admin_told_about v1.0.1 || fail "the admin was not told about the bad checksum"
 add_release "{\"repo\": \"$REPO\", \"tag\": \"v1.0.2\", \"files\": $(release_files 1.0.2), \"not_uploaded\": [\"MZGram-Android-1.0.2.apk\"]}"
 add_release "{\"repo\": \"$REPO\", \"tag\": \"v1.1.0-beta.1\", \"prerelease\": true, \"files\": $(release_files 1.1.0-beta.1)}"
 sleep 8
