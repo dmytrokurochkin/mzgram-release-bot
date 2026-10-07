@@ -1,0 +1,22 @@
+# --- mzgram-release-bot ---
+.env
+.env.*
+!.env.example
+data/
+downloads/
+*.db
+*.db-journal
+*.lock
+*.log
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/

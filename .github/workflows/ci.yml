@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Tests and shellcheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: pytest
+        run: python -m pytest -v
+      - name: shellcheck
+        run: shellcheck -x install.sh tests/integration/scenario.sh
+
+  install:
+    name: install.sh on Debian 12 (systemd, fake Bot API and GitHub)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Branch for install.sh to clone
+        run: git branch -f ci-test HEAD
+      - name: Build the Debian image
+        run: docker build -t mzgram-release-test tests/integration
+      - name: Start the container
+        run: >-
+          docker run -d --name debian --privileged --cgroupns=host
+          -v /sys/fs/cgroup:/sys/fs/cgroup:rw
+          --tmpfs /run --tmpfs /run/lock --tmpfs /tmp
+          -v "$PWD:/src:ro"
+          mzgram-release-test
+      - name: Wait for systemd
+        run: |
+          for _ in $(seq 60); do
+            state=$(docker exec debian systemctl is-system-running 2>/dev/null || true)
+            case "$state" in running|degraded) echo "systemd: $state"; exit 0 ;; esac
+            sleep 1
+          done
+          docker exec debian systemctl --failed --no-pager || true
+          exit 1
+      - name: Run the install check
+        run: docker exec debian bash /src/tests/integration/scenario.sh
+      - name: Logs on failure
+        if: failure()
+        run: |
+          docker exec debian journalctl --no-pager -n 200 || true
+          docker exec debian sh -c 'tail -n 50 /root/mock-*.log' || true

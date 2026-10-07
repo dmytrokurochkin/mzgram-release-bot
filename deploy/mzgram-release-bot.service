@@ -1,0 +1,45 @@
+[Unit]
+Description=MZGram release bot (GitHub releases to a Telegram channel)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mzgram-release
+Group=mzgram-release
+WorkingDirectory=/opt/mzgram-release-bot
+Environment=DATA_DIR=/var/lib/mzgram-release-bot
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/mzgram-release-bot/.venv/bin/python main.py
+Restart=on-failure
+RestartSec=15
+
+# /var/lib/mzgram-release-bot: the database and the downloads, the only writable place
+StateDirectory=mzgram-release-bot
+StateDirectoryMode=0750
+UMask=0077
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
