@@ -52,8 +52,8 @@ release_files() {
 run_install() {
     local log=$1
     shift
-    # The same way a server runs it: the script comes through a pipe
-    if ! cat "$SRC/install.sh" | env MZGRAM_REPO_URL="file://$SRC" MZGRAM_BRANCH=ci-test MZGRAM_NONINTERACTIVE=1 "$@" bash >"$log" 2>&1; then
+    # As on a server: bash reads the script from stdin, with no terminal
+    if ! env MZGRAM_REPO_URL="file://$SRC" MZGRAM_BRANCH=ci-test MZGRAM_NONINTERACTIVE=1 "$@" bash <"$SRC/install.sh" >"$log" 2>&1; then
         cat "$log"
         fail "install.sh exited with an error"
     fi
@@ -61,7 +61,11 @@ run_install() {
 }
 
 # --- fakes ---
-git config --global --add safe.directory '*'
+# /src belongs to the runner's user; git (installed by install.sh) must still clone it.
+# git is not there yet, so the setting goes straight to root's config
+printf '[safe]
+	directory = *
+' >>/root/.gitconfig
 nohup python3 "$SRC/tests/mock_servers.py" bot --port 8081 >/root/mock-local.log 2>&1 &
 nohup python3 "$SRC/tests/mock_servers.py" bot --port 8082 >/root/mock-cloud.log 2>&1 &
 nohup python3 "$SRC/tests/mock_servers.py" github --port 8099 --repo "$REPO" --repo dmytrokurochkin/MZGram-Desktop >/root/mock-github.log 2>&1 &
