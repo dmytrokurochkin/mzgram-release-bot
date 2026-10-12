@@ -42,9 +42,9 @@ tests/integration/      # Debian 12 з systemd для перевірки install
 | `BOT_API_URL` | ні | локальний Bot API, типово `http://127.0.0.1:8081` |
 | `ADMIN_IDS` | ні | адміни через кому |
 | `REPOS` | ні | репозиторії через кому |
-| `POLL_INTERVAL` | ні | секунди між опитуваннями, 300 |
+| `POLL_INTERVAL` | ні | секунди між опитуваннями, 600 |
 | `PUBLISH_PRERELEASES` | ні | `true` публікує і prerelease |
-| `GITHUB_TOKEN` | ні | більше лімітів GitHub |
+| `GITHUB_TOKEN` | ні | ліміт 5000 запитів на годину замість 60 на IP; install.sh питає, поки його немає |
 | `GITHUB_API_URL` | ні | для тестів (підроблений GitHub) |
 | `DATA_DIR` | ні | ставить systemd: `/var/lib/mzgram-release-bot` |
 | `UPLOAD_TIMEOUT` | ні | секунди на надсилання поста, 7200 |
@@ -68,6 +68,7 @@ tests/integration/      # Debian 12 з systemd для перевірки install
 - **Токен у install.sh** передається curl через `--config -` (stdin), у awk через `ENVIRON`, ніколи в аргументах процесу. Помилки curl відкидаються, бо можуть містити URL з токеном.
 - **Змінні в `$(...)`** не повертаються з підоболонки: функції install.sh, які мають встановити глобальну змінну (`try_get_me`, `check_channel`), викликаються без `$(...)`.
 - **`git reset --hard` в /opt** не чіпає `.env` і `.venv`, бо вони в `.gitignore`. Не додавати `git clean`.
+- **Ліміт GitHub.** Без токена 60 запитів на годину на IP сервера, спільні з іншими програмами, і 304 теж рахуються (не рахуються лише з токеном). На 403 з `X-RateLimit-Remaining: 0` (або "rate limit" у тексті) і на 429 `GitHubClient` кидає `RateLimited`; `ReleaseService.rate_limited()` ставить `paused_until` за `Retry-After` або `X-RateLimit-Reset` (інакше 15 хв) і пише адміну один раз на випадок; до цього часу `poll_once()` не питає GitHub жоден репозиторій (ліміт спільний). Час через `clock`, у тестах підмінюється.
 - **ETag і `/repost`.** Після `/repost` ETag репозиторію скидається, щоб наступне опитування прочитало виправлені файли.
 
 ## 6. Правила
