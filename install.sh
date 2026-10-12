@@ -326,6 +326,31 @@ read_admins() {
     [[ -z $ADMINS || $ADMINS =~ ^[0-9]+(,[0-9]+)*$ ]] || die "ADMIN_IDS: числа через кому"
 }
 
+# Optional. Without a token GitHub allows 60 requests an hour per IP address,
+# shared with every other program on the server; with one, 5000. Asked only
+# while .env has none, so a second run keeps the saved token.
+read_github_token() {
+    local token=${GITHUB_TOKEN:-} api body
+    if [ -z "$token" ] && [ -z "$(env_get GITHUB_TOKEN)" ] && [ "$HAVE_TTY" = 1 ]; then
+        token=$(ask_secret "Токен GitHub, необов'язково (без нього 60 запитів на годину на IP сервера; Enter, щоб пропустити): ")
+    fi
+    [ -n "$token" ] || return 0
+    [[ $token =~ ^[A-Za-z0-9_]{20,255}$ ]] || die "GITHUB_TOKEN має вигляд ghp_... або github_pat_..."
+    api=${GITHUB_API_URL:-$(env_get GITHUB_API_URL)}
+    api=${api:-https://api.github.com}
+    # The token goes to curl through stdin, like the bot token
+    if body=$(printf 'header = "Authorization: Bearer %s"\nurl = "%s/rate_limit"\n' "$token" "${api%/}" |
+        curl -sS --max-time 20 --config - -H "Accept: application/vnd.github+json" 2>/dev/null); then
+        if [ -z "$(json_get rate limit <<<"$body")" ]; then
+            die "GitHub не прийняв GITHUB_TOKEN: $(json_get message <<<"$body")"
+        fi
+        info "Токен GitHub прийнято: $(json_get rate limit <<<"$body") запитів на годину"
+    else
+        warn "GitHub недоступний, токен не перевірено"
+    fi
+    GITHUB_TOKEN=$token
+}
+
 write_env() {
     local base tmp key keys=(BOT_TOKEN CHANNEL_ID BOT_API_URL ADMIN_IDS) value
     for key in GITHUB_TOKEN REPOS POLL_INTERVAL PUBLISH_PRERELEASES GITHUB_API_URL UPLOAD_TIMEOUT; do
@@ -413,6 +438,7 @@ main() {
     cloud_logout
     read_channel
     read_admins
+    read_github_token
     write_env
 
     install_unit

@@ -5,6 +5,7 @@ set -euo pipefail
 
 SRC=/src
 SECRET=AAFakeTokenForTheInstallCheck_0123456789
+GH_SECRET=ghp_FakeGitHubTokenForTheInstallCheck01
 TOKEN=123456789:$SECRET
 REPO=dmytrokurochkin/MZGram-Android
 APP=mzgram-release-bot
@@ -82,13 +83,16 @@ add_release "{\"repo\": \"$REPO\", \"tag\": \"v0.9.0\", \"files\": $(release_fil
 # --- first install ---
 run_install /root/install-1.log \
     BOT_TOKEN="$TOKEN" CHANNEL_ID=-1001234567890 ADMIN_IDS=42 \
-    GITHUB_API_URL=http://127.0.0.1:8099 POLL_INTERVAL=2 \
+    GITHUB_API_URL=http://127.0.0.1:8099 POLL_INTERVAL=2 GITHUB_TOKEN="$GH_SECRET" \
     MZGRAM_LOGOUT=yes MZGRAM_CLOUD_API_URL=http://127.0.0.1:8082
 
 systemctl is-active --quiet "$APP" || fail "service is not active"
 ok "service is active"
 grep -qF "$SECRET" /root/install-1.log && fail "the token is in the install output"
-ok "install output has no token"
+grep -qF "$GH_SECRET" /root/install-1.log && fail "the GitHub token is in the install output"
+grep -qx "GITHUB_TOKEN=$GH_SECRET" "$ENV_FILE" || fail "GITHUB_TOKEN not saved"
+grep -q "Токен GitHub прийнято" /root/install-1.log || fail "the GitHub token was not checked"
+ok "install output has no tokens, GITHUB_TOKEN saved and checked"
 [ "$(stat -c '%a %U' "$ENV_FILE")" = "600 mzgram-release" ] || fail ".env mode/owner: $(stat -c '%a %U' "$ENV_FILE")"
 grep -qx 'BOT_API_URL=http://127.0.0.1:8081' "$ENV_FILE" || fail "local Bot API was not detected"
 grep -qx 'CHANNEL_ID=-1001234567890' "$ENV_FILE" || fail "CHANNEL_ID not saved"
@@ -164,7 +168,14 @@ ok "second install: .env, history and channel unchanged"
 # --- the token stays out of the logs ---
 journalctl -u "$APP" --no-pager | grep -qF "$SECRET" && fail "the token is in the journal"
 grep -qF "$SECRET" /root/install-2.log && fail "the token is in the second install output"
-ok "the token is not in the journal"
+journalctl -u "$APP" --no-pager | grep -qF "$GH_SECRET" && fail "the GitHub token is in the journal"
+grep -qx "GITHUB_TOKEN=$GH_SECRET" "$ENV_FILE" || fail "the second install lost GITHUB_TOKEN"
+curl -s http://127.0.0.1:8099/_control/calls | python3 -c '
+import json, sys
+calls = json.load(sys.stdin)
+assert calls and all(call["auth"] for call in calls), "a GitHub request went without the token"
+' || fail "the bot does not send GITHUB_TOKEN"
+ok "the tokens are not in the journal, the bot sends GITHUB_TOKEN, the second install kept it"
 
 systemd-analyze security "$APP" --no-pager 2>/dev/null | tail -n 1 || true
 echo "ALL CHECKS PASSED"
