@@ -3,6 +3,8 @@ import html
 import logging
 import re
 import shutil
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from aiogram.exceptions import (
@@ -14,7 +16,7 @@ from aiogram.exceptions import (
 
 from core.utils import redact
 from database import Database, ReleaseRow
-from services.github import GitHubClient, GitHubError
+from services.github import GitHubClient, GitHubError, RateLimited
 from services.publisher import MAX_FILES, Publisher, build_caption, notes_to_text, release_title
 
 log = logging.getLogger(__name__)
@@ -22,6 +24,8 @@ log = logging.getLogger(__name__)
 SUMS_NAME = "SHA256SUMS"
 MAX_FILE_SIZE = 2000 * 1024 * 1024  # the local Bot API server limit
 FREE_SPACE_MARGIN = 200 * 1024 * 1024
+# Rate limited without a reset time in the answer: try again after this
+RATE_LIMIT_FALLBACK = 15 * 60
 _SUMS_LINE = re.compile(r"^([0-9a-fA-F]{64})\s+\*?(.+)$")
 
 
@@ -83,7 +87,8 @@ class ReleaseService:
         download_dir: Path,
         admin_ids: list[int],
         publish_prereleases: bool = False,
-        poll_interval: int = 300,
+        poll_interval: int = 600,
+        clock=time.time,
     ):
         self.db = db
         self.github = github
@@ -95,6 +100,10 @@ class ReleaseService:
         self.poll_interval = poll_interval
         self._wake = asyncio.Event()
         self._repo_errors: dict[str, str] = {}
+        self.clock = clock
+        # The limit is per IP address (or per token), shared by every repo:
+        # until this time no repo is asked
+        self.paused_until = 0.0
 
     # --- loop ---
 
@@ -125,9 +134,14 @@ class ReleaseService:
 
     async def poll_once(self) -> None:
         for repo in self.repos:
+            if self.clock() < self.paused_until:
+                break
             try:
                 await self.check_repo(repo)
                 self._repo_errors.pop(repo, None)
+            except RateLimited as exc:
+                await self.rate_limited(exc)
+                break
             except Exception as exc:  # noqa: BLE001
                 error = redact(f"{type(exc).__name__}: {exc}")
                 log.warning("%s: %s", repo, error)
@@ -136,6 +150,25 @@ class ReleaseService:
                     await self.notify(f"⚠️ {repo}: не вдалося прочитати релізи з GitHub\n{error}")
         for row in await self.db.with_status("new", "verified"):
             await self.process(row)
+
+    async def rate_limited(self, exc: RateLimited) -> None:
+        """Waits quietly until GitHub gives requests again; one warning per limit hit."""
+        now = self.clock()
+        if exc.retry_after is not None:
+            until = now + exc.retry_after
+        elif exc.reset_at is not None:
+            until = exc.reset_at
+        else:
+            until = now + RATE_LIMIT_FALLBACK
+        until = max(until, now + 1)
+        self.paused_until = until
+        when = datetime.fromtimestamp(until, tz=timezone.utc).strftime("%H:%M UTC")
+        log.warning("GitHub rate limit, next request at %s: %s", when, redact(str(exc)))
+        await self.notify(
+            f"⏳ GitHub: ліміт запитів вичерпано, наступна перевірка о {when}.\n"
+            "Без GITHUB_TOKEN ліміт 60 запитів на годину на IP-адресу сервера, спільний з іншими програмами на ній. "
+            "Токен (install.sh спитає його) дає 5000."
+        )
 
     async def check_repo(self, repo: str) -> None:
         backfilled, etag = await self.db.get_repo(repo)

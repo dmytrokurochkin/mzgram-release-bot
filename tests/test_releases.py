@@ -261,3 +261,78 @@ async def test_resolve_repo(make_service):
     assert service.resolve_repo("android") == REPO
     assert service.resolve_repo("MZGram-Desktop") == "dmytrokurochkin/MZGram-Desktop"
     assert service.resolve_repo("mzgram") is None
+
+
+class Clock:
+    def __init__(self, now: float = 1_800_000_000.0):
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
+
+
+async def test_rate_limit_waits_until_reset_and_warns_once(make_service, bot_api, github):
+    clock = Clock()
+    service = await make_service(repos=[REPO, "dmytrokurochkin/MZGram-Desktop"], clock=clock)
+    github.add_repo("dmytrokurochkin/MZGram-Desktop")
+    await service.backfill()
+    github.rate_limited = (403, {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(int(clock.now) + 1800)})
+    await service.poll_once()
+    asked = len(github.requests)
+    for _ in range(3):
+        clock.now += 300
+        await service.poll_once()
+
+    assert len(github.requests) == asked, "no GitHub requests until the reset time"
+    texts = admin_texts(bot_api)
+    assert len([text for text in texts if "ліміт" in text]) == 1, texts
+    assert not [text for text in texts if "не вдалося прочитати" in text], texts
+
+    # The limit is reset: polling goes on and a new release is posted
+    github.rate_limited = None
+    github.add_release(REPO, "v1.0.0", files())
+    clock.now += 1000
+    await service.poll_once()
+    assert bot_api.count("sendMediaGroup") == 1
+
+
+async def test_rate_limit_again_later_is_a_new_warning(make_service, bot_api, github):
+    clock = Clock()
+    service = await make_service(clock=clock)
+    await service.backfill()
+    github.rate_limited = (403, {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(int(clock.now) + 600)})
+    await service.poll_once()
+    clock.now += 700
+    github.rate_limited = None
+    await service.poll_once()
+    github.rate_limited = (403, {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(int(clock.now) + 600)})
+    await service.poll_once()
+
+    assert len([text for text in admin_texts(bot_api) if "ліміт" in text]) == 2
+
+
+async def test_secondary_rate_limit_uses_retry_after(make_service, bot_api, github):
+    clock = Clock()
+    service = await make_service(clock=clock)
+    await service.backfill()
+    github.rate_limited = (429, {"Retry-After": "120"})
+    await service.poll_once()
+    asked = len(github.requests)
+    clock.now += 60
+    await service.poll_once()
+    assert len(github.requests) == asked, "still waiting for Retry-After"
+    github.rate_limited = None
+    clock.now += 61
+    await service.poll_once()
+    assert len(github.requests) == asked + 1
+
+
+async def test_token_is_sent_to_github(make_service, github, tmp_path):
+    import aiohttp
+
+    from services.github import GitHubClient
+
+    async with aiohttp.ClientSession() as http:
+        service = await make_service(github=GitHubClient(http, github.url, "ghp_testtoken"))
+        await service.backfill()
+    assert github.requests and all(request["auth"] for request in github.requests)

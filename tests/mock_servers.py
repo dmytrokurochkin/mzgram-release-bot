@@ -129,11 +129,14 @@ class FakeGitHub:
         self.blobs: dict[str, bytes] = {}
         self.requests: list[dict] = []
         self.next_id = 1
+        # (status, headers) to answer the release lists with, as GitHub does when the limit is spent
+        self.rate_limited: tuple[int, dict[str, str]] | None = None
 
     def app(self) -> web.Application:
         app = web.Application()
         app.router.add_get("/repos/{owner}/{name}/releases", self.list_releases)
         app.router.add_get("/download/{path:.+}", self.download)
+        app.router.add_get("/rate_limit", self.rate_limit)
         app.router.add_get("/_control/calls", self.control_calls)
         app.router.add_post("/_control/repo", self.control_repo)
         app.router.add_post("/_control/release", self.control_release)
@@ -195,6 +198,10 @@ class FakeGitHub:
     async def list_releases(self, request: web.Request) -> web.Response:
         repo = f"{request.match_info['owner']}/{request.match_info['name']}"
         self.requests.append({"repo": repo, "if_none_match": request.headers.get("If-None-Match"), "auth": "Authorization" in request.headers})
+        if self.rate_limited is not None:
+            status, headers = self.rate_limited
+            message = "API rate limit exceeded for 203.0.113.7. (But here's the good news: Authenticated requests get a higher rate limit.)"
+            return web.json_response({"message": message}, status=status, headers=headers)
         if repo not in self.releases:
             return web.json_response({"message": "Not Found"}, status=404)
         origin = f"{request.scheme}://{request.host}"
@@ -211,6 +218,11 @@ class FakeGitHub:
         if request.headers.get("If-None-Match") == etag:
             return web.Response(status=304, headers={"ETag": etag})
         return web.Response(body=body, content_type="application/json", headers={"ETag": etag})
+
+    async def rate_limit(self, request: web.Request) -> web.Response:
+        if not request.headers.get("Authorization", "").startswith("Bearer "):
+            return web.json_response({"message": "Bad credentials"}, status=401)
+        return web.json_response({"rate": {"limit": 5000, "remaining": 4999, "reset": int(time.time()) + 3600}})
 
     async def download(self, request: web.Request) -> web.Response:
         path = request.match_info["path"]

@@ -29,7 +29,9 @@ BOT_API_URL = os.getenv("BOT_API_URL", "http://127.0.0.1:8081").strip()
 ADMIN_IDS = [int(item) for item in _list(os.getenv("ADMIN_IDS", "")) if item.isdigit()]
 
 REPOS = _list(os.getenv("REPOS", "dmytrokurochkin/MZGram-Android,dmytrokurochkin/MZGram-Desktop"))
-POLL_INTERVAL = max(1, int(os.getenv("POLL_INTERVAL", "300")))
+# 600 s: two repos without a token take 12 of the 60 requests an hour GitHub
+# gives one IP address, leaving room for other programs on the server
+POLL_INTERVAL = max(1, int(os.getenv("POLL_INTERVAL", "600")))
 PUBLISH_PRERELEASES = _bool(os.getenv("PUBLISH_PRERELEASES", "false"))
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip() or None
 GITHUB_API_URL = os.getenv("GITHUB_API_URL", "https://api.github.com").strip().rstrip("/")
