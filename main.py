@@ -46,6 +46,7 @@ async def run(backfill_only: bool) -> None:
                 admin_ids=config.ADMIN_IDS,
                 publish_prereleases=config.PUBLISH_PRERELEASES,
                 poll_interval=config.POLL_INTERVAL,
+                channel_files=config.CHANNEL_FILES,
             )
             if backfill_only:
                 await service.backfill()

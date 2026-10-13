@@ -24,6 +24,10 @@ log = logging.getLogger(__name__)
 SUMS_NAME = "SHA256SUMS"
 MAX_FILE_SIZE = 2000 * 1024 * 1024  # the local Bot API server limit
 FREE_SPACE_MARGIN = 200 * 1024 * 1024
+# Files that go to the channel: a name ending with an entry that starts with
+# a dot, or a name equal to the entry. The rest (the signing lineage, for
+# example) is checked like every file but stays on the release page.
+DEFAULT_CHANNEL_FILES = (".apk", ".exe", ".zip", ".tar.xz", ".AppImage", ".deb", ".rpm", SUMS_NAME)
 # Rate limited without a reset time in the answer: try again after this
 RATE_LIMIT_FALLBACK = 15 * 60
 _SUMS_LINE = re.compile(r"^([0-9a-fA-F]{64})\s+\*?(.+)$")
@@ -53,6 +57,17 @@ def parse_sums(text: str) -> dict[str, str]:
     if not sums:
         raise Rejected(f"{SUMS_NAME} is empty")
     return sums
+
+
+def for_channel(name: str, patterns) -> bool:
+    lowered = name.lower()
+    for pattern in patterns:
+        if pattern.startswith("."):
+            if lowered.endswith(pattern.lower()):
+                return True
+        elif name == pattern:
+            return True
+    return False
 
 
 def compact(release: dict) -> dict:
@@ -89,6 +104,7 @@ class ReleaseService:
         publish_prereleases: bool = False,
         poll_interval: int = 600,
         clock=time.time,
+        channel_files=DEFAULT_CHANNEL_FILES,
     ):
         self.db = db
         self.github = github
@@ -101,6 +117,7 @@ class ReleaseService:
         self._wake = asyncio.Event()
         self._repo_errors: dict[str, str] = {}
         self.clock = clock
+        self.channel_files = tuple(channel_files)
         # The limit is per IP address (or per token), shared by every repo:
         # until this time no repo is asked
         self.paused_until = 0.0
@@ -230,10 +247,12 @@ class ReleaseService:
             shutil.rmtree(workdir, ignore_errors=True)
 
     async def fetch_files(self, release: dict, workdir: Path) -> list[Path]:
-        """Downloads the files SHA256SUMS lists and checks each one.
+        """Downloads the files SHA256SUMS lists, checks each one, returns the ones for the channel.
 
         A release is posted only as a whole: every listed file present and every
-        checksum right (SHA256SUMS and the digest GitHub computed on upload).
+        checksum right (SHA256SUMS and the digest GitHub computed on upload),
+        the files that stay on GitHub included. Only the files that match
+        channel_files go into the post, SHA256SUMS last (the caption sits under it).
         """
         assets = {asset["name"]: asset for asset in release["assets"] if asset.get("state", "uploaded") == "uploaded"}
         if SUMS_NAME not in assets:
@@ -246,9 +265,14 @@ class ReleaseService:
         missing = [name for name in sums if name not in assets]
         if missing:
             raise Incomplete(f"files not uploaded yet: {', '.join(sorted(missing))}")
-        if len(sums) + 1 > MAX_FILES:
-            raise Rejected(f"{len(sums) + 1} files, one post holds {MAX_FILES}")
-        too_big = [name for name in sums if assets[name]["size"] > MAX_FILE_SIZE]
+        posted = [name for name in sorted(sums) if for_channel(name, self.channel_files)]
+        with_sums = for_channel(SUMS_NAME, self.channel_files)
+        count = len(posted) + (1 if with_sums else 0)
+        if count == 0:
+            raise Rejected(f"no file of the release matches CHANNEL_FILES ({', '.join(self.channel_files)})")
+        if count > MAX_FILES:
+            raise Rejected(f"{count} files for the channel, one post holds {MAX_FILES}")
+        too_big = [name for name in posted if assets[name]["size"] > MAX_FILE_SIZE]
         if too_big:
             raise Rejected(f"larger than 2000 MB: {', '.join(too_big)}")
         need = sum(assets[name]["size"] for name in sums) + FREE_SPACE_MARGIN
@@ -258,6 +282,7 @@ class ReleaseService:
 
         files = []
         for name in sorted(sums):
+            # Every file is checked, also the ones that stay on GitHub
             path = workdir / name
             actual, size = await self.github.download(assets[name]["url"], path, MAX_FILE_SIZE)
             if actual != sums[name]:
@@ -267,8 +292,10 @@ class ReleaseService:
                 raise Rejected(f"{name}: SHA-256 {actual} does not match the GitHub digest {digest[7:]}")
             if size != assets[name]["size"]:
                 raise Rejected(f"{name}: {size} bytes downloaded, GitHub lists {assets[name]['size']}")
-            files.append(path)
-        files.append(sums_path)
+            if name in posted:
+                files.append(path)
+        if with_sums:
+            files.append(sums_path)
         return files
 
     async def post(self, row: ReleaseRow, release: dict, files: list[Path]) -> None:

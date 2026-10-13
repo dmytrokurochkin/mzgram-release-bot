@@ -117,12 +117,13 @@ curl -s http://127.0.0.1:8081/_control/calls | python3 -c '
 import json, sys, hashlib
 call = [c for c in json.load(sys.stdin) if c["method"] == "sendMediaGroup"][0]
 names = sorted(f["filename"] for f in call["files"].values())
-assert names == ["MZGram-Android-1.0.0-rotation.lineage", "MZGram-Android-1.0.0.apk", "SHA256SUMS"], names
+# The signing lineage is checked but stays on GitHub
+assert names == ["MZGram-Android-1.0.0.apk", "SHA256SUMS"], names
 apk = [f for f in call["files"].values() if f["filename"].endswith(".apk")][0]
 assert apk["sha256"] == hashlib.sha256(("apk 1.0.0 " + "x" * 3000).encode()).hexdigest()
 assert "MZGram Android 1.0.0" in json.loads(call["params"]["media"])[-1]["caption"]
 ' || fail "the post does not hold the right files"
-ok "v1.0.0: one post with the apk, the lineage and SHA256SUMS, pinned"
+ok "v1.0.0: one post with the apk and SHA256SUMS (lineage left on GitHub), pinned"
 
 # --- releases that must not be posted ---
 add_release "{\"repo\": \"$REPO\", \"tag\": \"v1.0.1\", \"files\": $(release_files 1.0.1), \"bad_sums\": [\"MZGram-Android-1.0.1.apk\"]}"

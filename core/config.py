@@ -34,6 +34,8 @@ REPOS = _list(os.getenv("REPOS", "dmytrokurochkin/MZGram-Android,dmytrokurochkin
 POLL_INTERVAL = max(1, int(os.getenv("POLL_INTERVAL", "600")))
 PUBLISH_PRERELEASES = _bool(os.getenv("PUBLISH_PRERELEASES", "false"))
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip() or None
+# Which release files go to the channel (see services/releases.DEFAULT_CHANNEL_FILES)
+CHANNEL_FILES = _list(os.getenv("CHANNEL_FILES", ".apk,.exe,.zip,.tar.xz,.AppImage,.deb,.rpm,SHA256SUMS"))
 GITHUB_API_URL = os.getenv("GITHUB_API_URL", "https://api.github.com").strip().rstrip("/")
 
 DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))

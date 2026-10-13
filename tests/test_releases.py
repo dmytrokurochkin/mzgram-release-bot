@@ -30,11 +30,12 @@ async def test_new_release_is_posted_once_with_all_files_and_pinned(make_service
     call = bot_api.of("sendMediaGroup")[0]
     assert call["params"]["chat_id"] == str(CHANNEL)
     uploaded = {item["filename"]: item["sha256"] for item in call["files"].values()}
-    for name, data in content.items():
-        assert uploaded[name] == hashlib.sha256(data).hexdigest()
-    assert "SHA256SUMS" in uploaded
+    apk = next(name for name in content if name.endswith(".apk"))
+    assert uploaded[apk] == hashlib.sha256(content[apk]).hexdigest()
+    # The signing lineage is checked but stays on GitHub; SHA256SUMS comes last
+    assert sorted(uploaded) == sorted([apk, "SHA256SUMS"])
     media = json.loads(call["params"]["media"])
-    assert len(media) == 3
+    assert len(media) == 2
     assert all(item["type"] == "document" for item in media)
     assert "caption" not in media[0]
     caption = media[-1]["caption"]
@@ -45,7 +46,7 @@ async def test_new_release_is_posted_once_with_all_files_and_pinned(make_service
 
     row = await service.db.get(REPO, "v1.0.0")
     assert row.status == "posted"
-    assert len(row.message_ids) == 3
+    assert len(row.message_ids) == 2
     pins = bot_api.of("pinChatMessage")
     assert len(pins) == 1 and pins[0]["params"]["message_id"] == str(row.message_ids[0])
     assert not list((service.download_dir).rglob("*.*")), "downloads are removed after the post"
@@ -179,11 +180,69 @@ async def test_release_without_sums_is_not_posted(make_service, bot_api, github)
 async def test_more_than_ten_files_is_rejected(make_service, bot_api, github):
     service = await make_service()
     await service.backfill()
-    github.add_release(REPO, "v1.0.0", {f"file{i}.bin": bytes([i]) for i in range(10)})
+    github.add_release(REPO, "v1.0.0", {f"file{i}.zip": bytes([i]) for i in range(10)})
     await service.poll_once()
 
     assert bot_api.count("sendMediaGroup") == 0
     assert (await service.db.get(REPO, "v1.0.0")).status == "failed"
+
+
+async def test_only_channel_files_count_against_the_ten(make_service, bot_api, github):
+    service = await make_service()
+    await service.backfill()
+    content = {f"debug-symbols-{i}.pdb": bytes([i]) for i in range(9)}
+    content["MZGram-Desktop-1.0.0-windows-x64.zip"] = b"zip"
+    content["MZGram-Desktop-1.0.0-linux-x64.tar.xz"] = b"xz"
+    github.add_release(REPO, "v1.0.0", content)
+    await service.poll_once()
+
+    assert bot_api.count("sendMediaGroup") == 1
+    names = sorted(f["filename"] for f in bot_api.of("sendMediaGroup")[0]["files"].values())
+    assert names == ["MZGram-Desktop-1.0.0-linux-x64.tar.xz", "MZGram-Desktop-1.0.0-windows-x64.zip", "SHA256SUMS"]
+
+
+async def test_a_file_kept_off_the_channel_is_still_checked(make_service, bot_api, github):
+    service = await make_service()
+    await service.backfill()
+    content = files()
+    lineage = next(name for name in content if name.endswith(".lineage"))
+    github.add_release(REPO, "v1.0.0", content, bad_sums=(lineage,))
+    await service.poll_once()
+
+    assert bot_api.count("sendMediaGroup") == 0
+    row = await service.db.get(REPO, "v1.0.0")
+    assert row.status == "failed" and lineage in row.error
+
+
+async def test_channel_files_can_be_changed(make_service, bot_api, github):
+    service = await make_service(channel_files=(".apk", ".lineage"))
+    await service.backfill()
+    github.add_release(REPO, "v1.0.0", files())
+    await service.poll_once()
+
+    names = sorted(f["filename"] for f in bot_api.of("sendMediaGroup")[0]["files"].values())
+    assert names == ["MZGram-Android-1.0.0-rotation.lineage", "MZGram-Android-1.0.0.apk"]
+    caption = json.loads(bot_api.of("sendMediaGroup")[0]["params"]["media"])[-1]["caption"]
+    assert "MZGram" in caption
+
+
+async def test_release_without_channel_files_is_rejected(make_service, bot_api, github):
+    service = await make_service(channel_files=(".exe",))
+    await service.backfill()
+    github.add_release(REPO, "v1.0.0", files())
+    await service.poll_once()
+
+    assert bot_api.count("sendMediaGroup") == 0
+    assert "CHANNEL_FILES" in (await service.db.get(REPO, "v1.0.0")).error
+
+
+def test_for_channel_matches_suffixes_and_names():
+    from services.releases import DEFAULT_CHANNEL_FILES, for_channel
+
+    for name in ["MZGram-Android-1.0.0.apk", "MZGram.EXE", "x.zip", "x.tar.xz", "MZGram.AppImage", "x.deb", "x.rpm", "SHA256SUMS"]:
+        assert for_channel(name, DEFAULT_CHANNEL_FILES), name
+    for name in ["MZGram-Android-1.0.0-rotation.lineage", "notes.md", "x.tar.gz", "SHA256SUMS.asc", "sha256sums"]:
+        assert not for_channel(name, DEFAULT_CHANNEL_FILES), name
 
 
 async def test_prereleases_and_drafts_are_skipped_by_default(make_service, bot_api, github):
