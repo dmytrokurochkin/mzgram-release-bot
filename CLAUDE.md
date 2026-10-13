@@ -44,6 +44,7 @@ tests/integration/      # Debian 12 з systemd для перевірки install
 | `REPOS` | ні | репозиторії через кому |
 | `POLL_INTERVAL` | ні | секунди між опитуваннями, 600 |
 | `PUBLISH_PRERELEASES` | ні | `true` публікує і prerelease |
+| `CHANNEL_FILES` | ні | які файли релізу йдуть у канал: `.розширення` або точна назва, типово `.apk,.exe,.zip,.tar.xz,.AppImage,.deb,.rpm,SHA256SUMS` |
 | `GITHUB_TOKEN` | ні | ліміт 5000 запитів на годину замість 60 на IP; install.sh питає, поки його немає |
 | `GITHUB_API_URL` | ні | для тестів (підроблений GitHub) |
 | `DATA_DIR` | ні | ставить systemd: `/var/lib/mzgram-release-bot` |
@@ -54,7 +55,7 @@ tests/integration/      # Debian 12 з systemd для перевірки install
 1. `poll_once()`: для кожного репозиторію `GET /repos/{repo}/releases` з `If-None-Match`. 304 нічого не змінює.
 2. Репозиторій, який ще не пройшов backfill: усі релізи записуються як `skipped`, нічого не публікується.
 3. Нові релізи: `new` (prerelease без `PUBLISH_PRERELEASES`: `skipped`; чернетки не записуються).
-4. `process()` для `new`/`verified`: завантажити `SHA256SUMS`, перевірити, що всі файли з нього є в релізі (інакше `Incomplete`, реліз чекає), завантажити кожен, звірити SHA-256 з `SHA256SUMS` і з `digest` GitHub, розмір (інакше `Rejected`, `failed`).
+4. `process()` для `new`/`verified`: завантажити `SHA256SUMS`, перевірити, що всі файли з нього є в релізі (інакше `Incomplete`, реліз чекає), завантажити кожен, звірити SHA-256 з `SHA256SUMS` і з `digest` GitHub, розмір (інакше `Rejected`, `failed`). Перевіряються всі файли, у пост ідуть лише ті, що підходять під `CHANNEL_FILES` (`for_channel()`), `SHA256SUMS` останнім; ліміт 10 рахується по них.
 5. `post()`: атомарний перехід `verified -> posting` (`set_status(..., expected=("verified",))`), один `sendMediaGroup`, потім `posted` з message_ids, потім pin першого повідомлення.
 6. Завантаження видаляються після кожного релізу і при старті.
 
