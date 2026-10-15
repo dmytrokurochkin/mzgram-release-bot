@@ -44,7 +44,7 @@ tests/integration/      # Debian 12 з systemd для перевірки install
 | `REPOS` | ні | репозиторії через кому |
 | `POLL_INTERVAL` | ні | секунди між опитуваннями, 600 |
 | `PUBLISH_PRERELEASES` | ні | `true` публікує і prerelease |
-| `CHANNEL_FILES` | ні | які файли релізу йдуть у канал: `.розширення` або точна назва, типово `.apk,.exe,.zip,.tar.xz,.AppImage,.deb,.rpm,SHA256SUMS` |
+| `CHANNEL_FILES` | ні | які файли релізу йдуть у канал: `.розширення` або точна назва, типово `.apk,.zip,.tar.xz,SHA256SUMS`; архіви вихідників (`-source.`, `-src.`) у канал не йдуть ніколи (`SOURCE_ARCHIVE`) |
 | `GITHUB_TOKEN` | ні | ліміт 5000 запитів на годину замість 60 на IP; install.sh питає, поки його немає |
 | `GITHUB_API_URL` | ні | для тестів (підроблений GitHub) |
 | `DATA_DIR` | ні | ставить systemd: `/var/lib/mzgram-release-bot` |
