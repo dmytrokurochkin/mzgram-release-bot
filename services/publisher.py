@@ -9,7 +9,7 @@ from core.utils import utf16_len
 
 CAPTION_LIMIT = 1024
 MAX_FILES = 10  # one media group holds 2..10 files
-LINK_TEXT = "Усі зміни і файли на GitHub"
+LINK_TEXT = "All changes and files on GitHub"
 
 _LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _EMPHASIS = re.compile(r"(\*\*|__|`)")

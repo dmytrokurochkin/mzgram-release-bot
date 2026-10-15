@@ -353,7 +353,12 @@ read_github_token() {
 
 write_env() {
     local base tmp key keys=(BOT_TOKEN CHANNEL_ID BOT_API_URL ADMIN_IDS) value
-    for key in GITHUB_TOKEN REPOS POLL_INTERVAL PUBLISH_PRERELEASES GITHUB_API_URL UPLOAD_TIMEOUT; do
+    # The old default list of channel files becomes the new one; a list the
+    # admin changed by hand stays as it is
+    if [ -f "$ENV_FILE" ] && grep -qx 'CHANNEL_FILES=.apk,.exe,.zip,.tar.xz,.AppImage,.deb,.rpm,SHA256SUMS' "$ENV_FILE"; then
+        CHANNEL_FILES='.apk,.zip,.tar.xz,SHA256SUMS'
+    fi
+    for key in GITHUB_TOKEN REPOS POLL_INTERVAL PUBLISH_PRERELEASES GITHUB_API_URL UPLOAD_TIMEOUT CHANNEL_FILES; do
         [ -z "${!key:-}" ] || keys+=("$key")
     done
     base=$ENV_FILE

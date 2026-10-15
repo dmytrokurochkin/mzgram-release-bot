@@ -27,7 +27,10 @@ FREE_SPACE_MARGIN = 200 * 1024 * 1024
 # Files that go to the channel: a name ending with an entry that starts with
 # a dot, or a name equal to the entry. The rest (the signing lineage, for
 # example) is checked like every file but stays on the release page.
-DEFAULT_CHANNEL_FILES = (".apk", ".exe", ".zip", ".tar.xz", ".AppImage", ".deb", ".rpm", SUMS_NAME)
+DEFAULT_CHANNEL_FILES = (".apk", ".zip", ".tar.xz", SUMS_NAME)
+# Source archives ("MZGram-Desktop-1.0.0-source.tar.xz") stay on GitHub
+# whatever CHANNEL_FILES says: the channel gets only files to install.
+SOURCE_ARCHIVE = re.compile(r"(^|[-_.])(source|src)\.", re.IGNORECASE)
 # Rate limited without a reset time in the answer: try again after this
 RATE_LIMIT_FALLBACK = 15 * 60
 _SUMS_LINE = re.compile(r"^([0-9a-fA-F]{64})\s+\*?(.+)$")
@@ -60,6 +63,8 @@ def parse_sums(text: str) -> dict[str, str]:
 
 
 def for_channel(name: str, patterns) -> bool:
+    if SOURCE_ARCHIVE.search(name):
+        return False
     lowered = name.lower()
     for pattern in patterns:
         if pattern.startswith("."):
