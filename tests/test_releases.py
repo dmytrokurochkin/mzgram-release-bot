@@ -239,10 +239,22 @@ async def test_release_without_channel_files_is_rejected(make_service, bot_api, 
 def test_for_channel_matches_suffixes_and_names():
     from services.releases import DEFAULT_CHANNEL_FILES, for_channel
 
-    for name in ["MZGram-Android-1.0.0.apk", "MZGram.EXE", "x.zip", "x.tar.xz", "MZGram.AppImage", "x.deb", "x.rpm", "SHA256SUMS"]:
+    for name in ["MZGram-Android-1.0.0.apk", "MZGram-Desktop-1.0.0-windows-x64.ZIP", "MZGram-Desktop-1.0.0-linux-x64.tar.xz", "SHA256SUMS"]:
         assert for_channel(name, DEFAULT_CHANNEL_FILES), name
-    for name in ["MZGram-Android-1.0.0-rotation.lineage", "notes.md", "x.tar.gz", "SHA256SUMS.asc", "sha256sums"]:
+    for name in ["MZGram-Android-1.0.0-rotation.lineage", "notes.md", "x.tar.gz", "SHA256SUMS.asc", "sha256sums",
+                 "MZGram-Desktop-1.0.0-source.tar.xz", "MZGram.exe", "MZGram.AppImage", "x.deb", "x.rpm"]:
         assert not for_channel(name, DEFAULT_CHANNEL_FILES), name
+
+
+def test_source_archives_never_go_to_the_channel():
+    from services.releases import for_channel
+
+    # Also with an older, wider CHANNEL_FILES from an existing .env
+    old = (".apk", ".exe", ".zip", ".tar.xz", ".AppImage", ".deb", ".rpm", "SHA256SUMS")
+    for name in ["MZGram-Desktop-1.0.0-source.tar.xz", "MZGram-1.0.0-src.zip", "source.tar.xz", "MZGram-Desktop-1.0.0-SOURCE.TAR.XZ"]:
+        assert not for_channel(name, old), name
+    for name in ["MZGram-Desktop-1.0.0-linux-x64.tar.xz", "resource-pack.zip", "MZGram-Android-1.0.0.apk"]:
+        assert for_channel(name, old), name
 
 
 async def test_prereleases_and_drafts_are_skipped_by_default(make_service, bot_api, github):

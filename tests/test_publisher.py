@@ -6,6 +6,8 @@ URL = "https://github.com/dmytrokurochkin/MZGram-Android/releases/tag/v1.0.0"
 def test_short_notes_are_kept_whole():
     caption = build_caption("MZGram Android 1.0.0", "• One\n• Two", URL)
     assert "• One\n• Two" in caption
+    # The channel speaks English: the link under the notes, to the release page
+    assert caption.endswith(f'<a href="{URL}">All changes and files on GitHub</a>')
     assert "…" not in caption
 
 
