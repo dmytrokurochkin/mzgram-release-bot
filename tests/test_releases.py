@@ -239,7 +239,8 @@ async def test_release_without_channel_files_is_rejected(make_service, bot_api, 
 def test_for_channel_matches_suffixes_and_names():
     from services.releases import DEFAULT_CHANNEL_FILES, for_channel
 
-    for name in ["MZGram-Android-1.0.0.apk", "MZGram-Desktop-1.0.0-windows-x64.ZIP", "MZGram-Desktop-1.0.0-linux-x64.tar.xz", "SHA256SUMS"]:
+    for name in ["MZGram-Android-1.0.0.apk", "MZGram-Desktop-1.0.0-windows-x64.ZIP", "MZGram-Desktop-1.0.0-windows-arm64.zip",
+                 "MZGram-Desktop-1.0.0-linux-x64.tar.xz", "MZGram-Desktop-1.0.0-linux-arm64.tar.xz", "SHA256SUMS"]:
         assert for_channel(name, DEFAULT_CHANNEL_FILES), name
     for name in ["MZGram-Android-1.0.0-rotation.lineage", "notes.md", "x.tar.gz", "SHA256SUMS.asc", "sha256sums",
                  "MZGram-Desktop-1.0.0-source.tar.xz", "MZGram.exe", "MZGram.AppImage", "x.deb", "x.rpm"]:
